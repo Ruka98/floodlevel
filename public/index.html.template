@@ -1,113 +1,409 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>GeoJSON Viewer — Local (Node)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Sri Lanka Flood Potential Map</title>
   <style>
-    html,body,#map { height:100%; margin:0; padding:0; }
-    #map { height: calc(100vh - 60px); }
+    /* RESET & BASE */
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      padding: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overscroll-behavior: none;
+      overflow: hidden;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      background: #f5f5f5;
+    }
+
+    /* TOPBAR STYLING */
     #topbar {
-      height:60px; display:flex; align-items:center; gap:12px;
-      padding:8px 12px; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,0.1);
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      z-index: 10;
+      position: relative;
     }
-    .btn { padding:8px 12px; border-radius:6px; border:1px solid #ddd; cursor:pointer; background:#f7f7f7; }
-    #sidebar { position:absolute; right:12px; top:72px; width:260px; max-height:60vh; overflow:auto;
-      background:rgba(255,255,255,0.95); padding:8px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.12);
-      font-family:system-ui,Segoe UI,Roboto,Arial;
+
+    /* MAP CONTAINER */
+    #map {
+      flex: 1 1 auto;
+      width: 100%;
+      background: #e5e3df;
     }
-    .feature-item { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
+
+    /* BUTTONS */
+    .btn {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      cursor: pointer;
+      background: #fff;
+      transition: all 0.2s;
+      font-size: 14px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      touch-action: manipulation;
+      white-space: nowrap;
+    }
+    .btn:hover, .btn:active { 
+      background: #f0f0f0; 
+      transform: translateY(-1px);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    }
+    .btn:disabled { 
+      opacity: 0.5; 
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* TITLE */
+    .title-text { 
+      font-weight: 600; 
+      font-size: 16px; 
+      color: #333;
+      margin-right: auto;
+    }
+    .api-note { 
+      font-size: 11px; 
+      color: #777; 
+      margin-left: 10px;
+    }
+
+    /* MOBILE CONTROLS PANEL */
+    #mobile-controls {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 5;
+    }
+
+    .mobile-btn {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: #fff;
+      border: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      touch-action: manipulation;
+    }
+
+    .mobile-btn:active {
+      transform: scale(0.95);
+      box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+    }
+
+    /* LEGEND */
+    #legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      font-size: 12px;
+      z-index: 5;
+      max-width: 180px;
+      backdrop-filter: blur(5px);
+    }
+
+    .legend-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #333;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      margin-right: 8px;
+      border-radius: 2px;
+    }
+
+    /* MOBILE MENU (Reduced) */
+    #mobile-menu {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.95);
+      z-index: 20;
+      display: none;
+      flex-direction: column;
+      padding: 20px;
+      overflow-y: auto;
+      backdrop-filter: blur(5px);
+    }
+
+    .menu-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .menu-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .close-menu {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+    }
+
+    /* --- MOBILE RESPONSIVE TWEAKS --- */
+    @media (max-width: 768px) {
+      #topbar {
+        padding: 10px 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .title-text { 
+        font-size: 14px; 
+        width: 100%;
+        text-align: center;
+        margin-bottom: 5px;
+      }
+
+      #btnFit, #btnLocate, #btnDownload, #btnMenu {
+        flex: 1;
+        height: 40px;
+        font-size: 13px;
+      }
+
+      .api-note { display: none; }
+      
+      #legend {
+        bottom: 90px;
+        left: 10px;
+        right: 10px;
+        max-width: none;
+      }
+      
+      #mobile-controls {
+        bottom: 20px;
+        right: 10px;
+      }
+    }
+
+    @media (min-width: 769px) {
+      #btnMenu { display: none; }
+      .mobile-btn { display: none; }
+    }
   </style>
 </head>
 <body>
+
   <div id="topbar">
-    <strong>GeoJSON Viewer</strong>
-    <button id="btnToggle" class="btn">Toggle GeoJSON</button>
-    <button id="btnFit" class="btn">Fit to data</button>
-    <button id="btnLocate" class="btn">My location</button>
-    <label style="margin-left:auto; font-size:13px; color:#555">Server-injected API key in .env</label>
+    <div class="title-text">Sri Lanka Flood Potential Map</div>
+    
+    <button id="btnFit" class="btn">Fit Map</button>
+    <button id="btnLocate" class="btn">📍 Me</button>
+    <button id="btnDownload" class="btn" disabled>⬇ GeoJSON</button>
+    <button id="btnMenu" class="btn">☰ Menu</button>
+    
+    <span class="api-note">SRTM 30m DEM</span>
   </div>
 
   <div id="map"></div>
-  <div id="sidebar" hidden>
-    <h4 style="margin:6px 0 8px">Features</h4>
-    <div id="featureList"></div>
+
+  <div id="mobile-controls">
+    <button id="btnMobileFit" class="mobile-btn" title="Fit to data">⤢</button>
+    <button id="btnMobileLocate" class="mobile-btn" title="My location">📍</button>
+    <button id="btnMobileLegend" class="mobile-btn" title="Toggle legend">📊</button>
   </div>
 
-  <!-- API key is injected server-side -->
+  <div id="legend">
+    <div class="legend-title">Legend</div>
+    <div class="legend-item">
+      <div class="legend-color" style="background-color: #4285f4; opacity: 0.5;"></div>
+      <span>Flood Potential Area</span>
+    </div>
+  </div>
+
+  <div id="mobile-menu">
+    <div class="menu-header">
+      <div class="menu-title">Options</div>
+      <button class="close-menu">×</button>
+    </div>
+    
+    <div class="menu-section">
+      <div style="font-weight: 600; margin-bottom: 10px; color: #333;">Data Export</div>
+      <button id="mobileDownload" class="btn" style="width: 100%; margin-bottom: 10px;" disabled>Download Shapefile (GeoJSON)</button>
+      <div style="font-size: 12px; color: #777; text-align: center; margin-top: 20px;">
+        Source: SRTM 30m DEM<br>
+        Visual: 50% Opacity, No Boundary
+      </div>
+    </div>
+  </div>
+
   <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&libraries=places"></script>
 
   <script>
-    let map, geojsonLayer, geojsonVisible = true, featureCollection;
+    let map, geojsonLayer, featureCollection;
     const mapEl = document.getElementById('map');
+    const btnDownloadEl = document.getElementById('btnDownload');
+    
+    // Mobile elements
+    const mobileMenuEl = document.getElementById('mobile-menu');
+    const btnMenuEl = document.getElementById('btnMenu');
+    const closeMenuEl = document.querySelector('.close-menu');
+    const mobileDownloadEl = document.getElementById('mobileDownload');
+    const btnMobileFitEl = document.getElementById('btnMobileFit');
+    const btnMobileLocateEl = document.getElementById('btnMobileLocate');
+    const btnMobileLegendEl = document.getElementById('btnMobileLegend');
+    const legendEl = document.getElementById('legend');
+
+    // Default Style Values
+    const FIXED_OPACITY = 0.5; // Fixed at 50%
+    const FLOOD_COLOR = '#4285f4'; // Uniform Blue
+    const STROKE_WEIGHT = 0; // No boundary lines
+
+    // Center of Sri Lanka for fallback
+    const SRI_LANKA_CENTER = { lat: 7.8731, lng: 80.7718 };
 
     function initMap() {
+      // Initialize map
       map = new google.maps.Map(mapEl, {
-        center: { lat: 7.8731, lng: 80.7718 },
+        center: SRI_LANKA_CENTER,
         zoom: 7,
         mapTypeControl: true,
+        mapTypeControlOptions: { 
+          position: google.maps.ControlPosition.LEFT_BOTTOM,
+          style: google.maps.MapTypeControlStyle.DROPDOWN_MENU
+        },
+        streetViewControl: false,
+        fullscreenControl: false,
+        zoomControl: true,
+        zoomControlOptions: {
+          position: google.maps.ControlPosition.RIGHT_BOTTOM
+        }
       });
 
-      fetch('/static/5m.geojson')
-        .then(r => { if (!r.ok) throw new Error('Failed to load 5m.geojson'); return r.json(); })
+      // Load Data
+      fetch('/static/5m.geojson') 
+        .then(r => { 
+          if (!r.ok) throw new Error('Failed to load 5m.geojson'); 
+          return r.json(); 
+        })
         .then(data => {
           featureCollection = data;
           addGeoJSONToMap(data);
-          populateSidebar(data);
+          btnDownloadEl.disabled = false;
+          mobileDownloadEl.disabled = false;
         })
         .catch(err => {
           console.error(err);
-          alert('Could not load 5m.geojson. Put it in public/ and restart server.');
+          alert("Error loading map data.");
         });
 
-      document.getElementById('btnToggle').onclick = () => {
-        geojsonVisible = !geojsonVisible;
-        if (geojsonLayer) geojsonLayer.setMap(geojsonVisible ? map : null);
-      };
+      // Event Listeners
       document.getElementById('btnFit').onclick = () => fitToGeoJSON();
       document.getElementById('btnLocate').onclick = () => locateUser();
+      btnDownloadEl.onclick = () => downloadGeoJSON();
+      
+      // Mobile event listeners
+      btnMenuEl.onclick = () => mobileMenuEl.style.display = 'flex';
+      closeMenuEl.onclick = () => mobileMenuEl.style.display = 'none';
+      
+      mobileDownloadEl.onclick = () => downloadGeoJSON();
+      btnMobileFitEl.onclick = () => fitToGeoJSON();
+      btnMobileLocateEl.onclick = () => locateUser();
+      btnMobileLegendEl.onclick = () => {
+        legendEl.style.display = legendEl.style.display === 'none' ? 'block' : 'none';
+      };
 
       map.addListener('click', () => {
         if (currentInfoWindow) currentInfoWindow.close();
       });
+      
+      // Close mobile menu when clicking outside
+      mobileMenuEl.addEventListener('click', (e) => {
+        if (e.target === mobileMenuEl) {
+          mobileMenuEl.style.display = 'none';
+        }
+      });
+    }
+
+    // Simplified style function: Fixed Color, 50% Opacity, 0 Border
+    function getGeoJSONStyle(feature) {
+        return {
+          fillColor: FLOOD_COLOR,
+          strokeWeight: STROKE_WEIGHT, // 0px boundary
+          fillOpacity: FIXED_OPACITY
+        };
+    }
+
+    function downloadGeoJSON() {
+      if (!featureCollection) return alert('Data not loaded yet.');
+      const dataStr = JSON.stringify(featureCollection, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'srilanka_flood_data.geojson';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     }
 
     let currentInfoWindow = null;
     function addGeoJSONToMap(data) {
-      geojsonLayer = new google.maps.Data({ map: map, zIndex: 5 });
+      geojsonLayer = new google.maps.Data({ map: map, zIndex: 1 });
       geojsonLayer.addGeoJson(data);
-      geojsonLayer.setStyle(feature => {
-        const geomType = feature.getGeometry().getType();
-        if (geomType === 'Point' || geomType === 'MultiPoint') {
-          return {
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 6,
-              strokeWeight: 1,
-              fillOpacity: 1,
-            }
-          };
-        } else {
-          return {
-            fillColor: '#4A90E2',
-            strokeColor: '#1F78B4',
-            strokeWeight: 2,
-            fillOpacity: 0.35
-          };
-        }
-      });
-
+      geojsonLayer.setStyle(feature => getGeoJSONStyle(feature));
+      
       geojsonLayer.addListener('click', ev => {
-        const props = ev.feature.getProperties ? getProperties(ev.feature) : {};
+        const props = getProperties(ev.feature);
         const content = buildInfoHtml(props);
         if (currentInfoWindow) currentInfoWindow.close();
         currentInfoWindow = new google.maps.InfoWindow({
           content,
-          position: ev.latLng
+          position: ev.latLng,
+          maxWidth: 300
         });
         currentInfoWindow.open(map);
       });
-
       fitToGeoJSON();
     }
 
@@ -121,14 +417,21 @@
       return p;
     }
 
+    function formatKey(key) {
+      return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
     function buildInfoHtml(props) {
-      let html = '<div style="font-family:system-ui,Segoe UI,Roboto,Arial; font-size:13px; max-width:260px">';
-      if (!props || Object.keys(props).length === 0) html += '<em>No properties</em>';
+      let html = '<div style="font-family:sans-serif; font-size:13px; max-width:260px; line-height:1.4;">';
+      if (!props || Object.keys(props).length === 0) html += '<em>No specific property data.</em>';
       else {
-        html += '<table style="width:100%">';
+        html += '<h5 style="margin:0 0 8px; color: #1F78B4; font-size:15px;">Area Details</h5>';
+        html += '<table style="width:100%; border-collapse: collapse;">';
         for (const k of Object.keys(props)) {
-          html += '<tr><td style="font-weight:600; padding:4px 6px; vertical-align:top; width:38%">' + escapeHtml(k) + '</td>' +
-                  '<td style="padding:4px 6px; vertical-align:top">' + escapeHtml(String(props[k])) + '</td></tr>';
+          if (k === 'id' || k.startsWith('_')) continue; 
+          html += '<tr style="border-bottom:1px solid #eee;">' +
+                  '<td style="font-weight:600; padding:4px 2px; vertical-align:top; color:#555;">' + escapeHtml(formatKey(k)) + '</td>' +
+                  '<td style="padding:4px 2px; vertical-align:top; text-align:right;">' + escapeHtml(String(props[k])) + '</td></tr>';
         }
         html += '</table>';
       }
@@ -136,16 +439,21 @@
       return html;
     }
 
-    function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function escapeHtml(s){ 
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
 
     function fitToGeoJSON() {
       if (!featureCollection) return;
       const bounds = new google.maps.LatLngBounds();
       const ext = featureCollection.features;
-      if (!ext || ext.length === 0) return;
+      if (!ext || ext.length === 0) {
+        map.setCenter(SRI_LANKA_CENTER);
+        map.setZoom(7);
+        return;
+      }
       ext.forEach(f => {
-        const geom = f.geometry;
-        addCoordsToBounds(geom, bounds);
+        addCoordsToBounds(f.geometry, bounds);
       });
       map.fitBounds(bounds);
     }
@@ -166,52 +474,26 @@
       }
     }
 
-    function populateSidebar(data) {
-      const list = document.getElementById('featureList');
-      list.innerHTML = '';
-      if (!data || !data.features) {
-        document.getElementById('sidebar').hidden = true;
-        return;
-      }
-      document.getElementById('sidebar').hidden = false;
-      data.features.forEach((f, i) => {
-        const el = document.createElement('div');
-        el.className = 'feature-item';
-        const title = (f.properties && (f.properties.name || f.properties.id || f.properties.title)) || `Feature ${i+1}`;
-        el.innerHTML = `<strong>${escapeHtml(title.toString())}</strong><div style="font-size:12px;color:#666">${escapeHtml(JSON.stringify(f.properties || {}).slice(0,110))}${(JSON.stringify(f.properties||{}).length>110?'…':'')}</div>`;
-        el.onclick = () => {
-          const c = centroidOfFeature(f);
-          if (c) {
-            map.panTo(c);
-            map.setZoom(Math.max(map.getZoom(), 12));
-          }
-        };
-        list.appendChild(el);
-      });
-    }
-
-    function centroidOfFeature(f) {
-      const geom = f.geometry;
-      if (!geom) return null;
-      const t = geom.type;
-      if (t === 'Point') return {lat: geom.coordinates[1], lng: geom.coordinates[0]};
-      let coords = null;
-      if (t === 'LineString' || t === 'MultiPoint') coords = geom.coordinates[0];
-      else if (t === 'Polygon') {
-        coords = (geom.coordinates[0] && geom.coordinates[0][0]) || null;
-      } else if (t === 'MultiPolygon') {
-        coords = (geom.coordinates[0] && geom.coordinates[0][0] && geom.coordinates[0][0][0]) || null;
-      }
-      return coords ? {lat: coords[1], lng: coords[0]} : null;
-    }
-
     function locateUser() {
       if (!navigator.geolocation) return alert('Geolocation not supported.');
       navigator.geolocation.getCurrentPosition(pos => {
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         map.setCenter(p);
         map.setZoom(14);
-        new google.maps.Marker({ map, position: p, title: 'You are here' });
+        new google.maps.Marker({ 
+          map, 
+          position: p, 
+          title: 'You are here',
+          icon: {
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+              <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="10" cy="10" r="8" fill="#4285f4" stroke="#fff" stroke-width="2"/>
+              </svg>
+            `),
+            scaledSize: new google.maps.Size(20, 20),
+            anchor: new google.maps.Point(10, 10)
+          }
+        });
       }, err => {
         alert('Geolocation error: ' + (err.message || err.code));
       }, { enableHighAccuracy: true, timeout: 8000 });
