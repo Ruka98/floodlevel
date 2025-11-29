@@ -1,0 +1,223 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GeoJSON Viewer — Local (Node)</title>
+  <style>
+    html,body,#map { height:100%; margin:0; padding:0; }
+    #map { height: calc(100vh - 60px); }
+    #topbar {
+      height:60px; display:flex; align-items:center; gap:12px;
+      padding:8px 12px; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,0.1);
+    }
+    .btn { padding:8px 12px; border-radius:6px; border:1px solid #ddd; cursor:pointer; background:#f7f7f7; }
+    #sidebar { position:absolute; right:12px; top:72px; width:260px; max-height:60vh; overflow:auto;
+      background:rgba(255,255,255,0.95); padding:8px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.12);
+      font-family:system-ui,Segoe UI,Roboto,Arial;
+    }
+    .feature-item { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <strong>GeoJSON Viewer</strong>
+    <button id="btnToggle" class="btn">Toggle GeoJSON</button>
+    <button id="btnFit" class="btn">Fit to data</button>
+    <button id="btnLocate" class="btn">My location</button>
+    <label style="margin-left:auto; font-size:13px; color:#555">Server-injected API key in .env</label>
+  </div>
+
+  <div id="map"></div>
+  <div id="sidebar" hidden>
+    <h4 style="margin:6px 0 8px">Features</h4>
+    <div id="featureList"></div>
+  </div>
+
+  <!-- API key is injected server-side -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__&libraries=places"></script>
+
+  <script>
+    let map, geojsonLayer, geojsonVisible = true, featureCollection;
+    const mapEl = document.getElementById('map');
+
+    function initMap() {
+      map = new google.maps.Map(mapEl, {
+        center: { lat: 7.8731, lng: 80.7718 },
+        zoom: 7,
+        mapTypeControl: true,
+      });
+
+      fetch('/static/5m.geojson')
+        .then(r => { if (!r.ok) throw new Error('Failed to load 5m.geojson'); return r.json(); })
+        .then(data => {
+          featureCollection = data;
+          addGeoJSONToMap(data);
+          populateSidebar(data);
+        })
+        .catch(err => {
+          console.error(err);
+          alert('Could not load 5m.geojson. Put it in public/ and restart server.');
+        });
+
+      document.getElementById('btnToggle').onclick = () => {
+        geojsonVisible = !geojsonVisible;
+        if (geojsonLayer) geojsonLayer.setMap(geojsonVisible ? map : null);
+      };
+      document.getElementById('btnFit').onclick = () => fitToGeoJSON();
+      document.getElementById('btnLocate').onclick = () => locateUser();
+
+      map.addListener('click', () => {
+        if (currentInfoWindow) currentInfoWindow.close();
+      });
+    }
+
+    let currentInfoWindow = null;
+    function addGeoJSONToMap(data) {
+      geojsonLayer = new google.maps.Data({ map: map, zIndex: 5 });
+      geojsonLayer.addGeoJson(data);
+      geojsonLayer.setStyle(feature => {
+        const geomType = feature.getGeometry().getType();
+        if (geomType === 'Point' || geomType === 'MultiPoint') {
+          return {
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 6,
+              strokeWeight: 1,
+              fillOpacity: 1,
+            }
+          };
+        } else {
+          return {
+            fillColor: '#4A90E2',
+            strokeColor: '#1F78B4',
+            strokeWeight: 2,
+            fillOpacity: 0.35
+          };
+        }
+      });
+
+      geojsonLayer.addListener('click', ev => {
+        const props = ev.feature.getProperties ? getProperties(ev.feature) : {};
+        const content = buildInfoHtml(props);
+        if (currentInfoWindow) currentInfoWindow.close();
+        currentInfoWindow = new google.maps.InfoWindow({
+          content,
+          position: ev.latLng
+        });
+        currentInfoWindow.open(map);
+      });
+
+      fitToGeoJSON();
+    }
+
+    function getProperties(feature) {
+      const p = {};
+      if (feature && feature.forEachProperty) {
+        feature.forEachProperty((value, key) => p[key] = value);
+      } else if (feature && feature.getProperty) {
+        return { id: feature.getId() };
+      }
+      return p;
+    }
+
+    function buildInfoHtml(props) {
+      let html = '<div style="font-family:system-ui,Segoe UI,Roboto,Arial; font-size:13px; max-width:260px">';
+      if (!props || Object.keys(props).length === 0) html += '<em>No properties</em>';
+      else {
+        html += '<table style="width:100%">';
+        for (const k of Object.keys(props)) {
+          html += '<tr><td style="font-weight:600; padding:4px 6px; vertical-align:top; width:38%">' + escapeHtml(k) + '</td>' +
+                  '<td style="padding:4px 6px; vertical-align:top">' + escapeHtml(String(props[k])) + '</td></tr>';
+        }
+        html += '</table>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    function fitToGeoJSON() {
+      if (!featureCollection) return;
+      const bounds = new google.maps.LatLngBounds();
+      const ext = featureCollection.features;
+      if (!ext || ext.length === 0) return;
+      ext.forEach(f => {
+        const geom = f.geometry;
+        addCoordsToBounds(geom, bounds);
+      });
+      map.fitBounds(bounds);
+    }
+
+    function addCoordsToBounds(geom, bounds) {
+      if (!geom) return;
+      const type = geom.type;
+      if (type === 'Point') {
+        bounds.extend({lat: geom.coordinates[1], lng: geom.coordinates[0]});
+      } else if (type === 'MultiPoint' || type === 'LineString') {
+        geom.coordinates.forEach(c => bounds.extend({lat: c[1], lng: c[0]}));
+      } else if (type === 'Polygon' || type === 'MultiLineString') {
+        geom.coordinates.forEach(ring => ring.forEach(c => bounds.extend({lat:c[1], lng:c[0]})));
+      } else if (type === 'MultiPolygon') {
+        geom.coordinates.forEach(poly => poly.forEach(ring => ring.forEach(c => bounds.extend({lat:c[1], lng:c[0]}))));
+      } else if (type === 'GeometryCollection') {
+        geom.geometries.forEach(g => addCoordsToBounds(g, bounds));
+      }
+    }
+
+    function populateSidebar(data) {
+      const list = document.getElementById('featureList');
+      list.innerHTML = '';
+      if (!data || !data.features) {
+        document.getElementById('sidebar').hidden = true;
+        return;
+      }
+      document.getElementById('sidebar').hidden = false;
+      data.features.forEach((f, i) => {
+        const el = document.createElement('div');
+        el.className = 'feature-item';
+        const title = (f.properties && (f.properties.name || f.properties.id || f.properties.title)) || `Feature ${i+1}`;
+        el.innerHTML = `<strong>${escapeHtml(title.toString())}</strong><div style="font-size:12px;color:#666">${escapeHtml(JSON.stringify(f.properties || {}).slice(0,110))}${(JSON.stringify(f.properties||{}).length>110?'…':'')}</div>`;
+        el.onclick = () => {
+          const c = centroidOfFeature(f);
+          if (c) {
+            map.panTo(c);
+            map.setZoom(Math.max(map.getZoom(), 12));
+          }
+        };
+        list.appendChild(el);
+      });
+    }
+
+    function centroidOfFeature(f) {
+      const geom = f.geometry;
+      if (!geom) return null;
+      const t = geom.type;
+      if (t === 'Point') return {lat: geom.coordinates[1], lng: geom.coordinates[0]};
+      let coords = null;
+      if (t === 'LineString' || t === 'MultiPoint') coords = geom.coordinates[0];
+      else if (t === 'Polygon') {
+        coords = (geom.coordinates[0] && geom.coordinates[0][0]) || null;
+      } else if (t === 'MultiPolygon') {
+        coords = (geom.coordinates[0] && geom.coordinates[0][0] && geom.coordinates[0][0][0]) || null;
+      }
+      return coords ? {lat: coords[1], lng: coords[0]} : null;
+    }
+
+    function locateUser() {
+      if (!navigator.geolocation) return alert('Geolocation not supported.');
+      navigator.geolocation.getCurrentPosition(pos => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        map.setCenter(p);
+        map.setZoom(14);
+        new google.maps.Marker({ map, position: p, title: 'You are here' });
+      }, err => {
+        alert('Geolocation error: ' + (err.message || err.code));
+      }, { enableHighAccuracy: true, timeout: 8000 });
+    }
+
+    window.onload = initMap;
+  </script>
+</body>
+</html>
